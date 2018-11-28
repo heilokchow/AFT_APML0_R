@@ -49,8 +49,9 @@ cross_validation <- function(Y=NULL, status=NULL, X=NULL, seed = 1, n = 200, p =
       old_model1 <- list(matrix(old_model$Y[out,]), matrix(old_model$status[out,]), old_model$X[out,], n-length(out), p)
       names(old_model1) <- c('Y', 'status', "X", "n", "p")
       new_model1 <- new_sample(old_model1)
-      temp <- l1.reg(t(new_model1$X), new_model1$Y, lambda = lambda[j]*new_model1$n^2)
-      temp1 <- matrix(temp$estimate)
+      ##temp <- l1.reg(t(new_model1$X), new_model1$Y, lambda = lambda[j]*new_model1$n^2)
+      ##temp1 <- matrix(temp$estimate)
+      temp1 <- matrix(LASSO.fit(new_model1$Y, new_model1$X, tau = 0.5, lambda = lambda[j], intercept = FALSE, coef.cutoff = 1e-10))
       rank <- Klasso(temp1)
       for (t in 1:maxit) {
         temp2 <- top_k(temp1, rank, t)
@@ -98,6 +99,22 @@ AFT_Likelihood <- function(new_model, beta) {
     }
   }
   return(s/new_model$n)
+}
+
+AFT_Likelihood_penalty <- function(new_model, beta, lambda) {
+  n1 <- new_model$n1
+  y0 <-  new_model$Y - new_model$X %*% beta
+  p <- new_model$p
+  s <- 0
+  for (i in 1:n1) {
+    if (y0[i, 1] < 0) {
+      s <- s - y0[i, 1]
+    }
+  }
+  for (i in 1:p) {
+    s <- s + abs(beta[i, 1])*lambda
+  }
+  return(s)
 }
 
 nzero <- function(beta) {
@@ -215,11 +232,12 @@ test1 <- new_sample(test)
 write.csv(test$Y,file = "y_input_2.csv")
 write.csv(test$status,file = "status_input_2.csv")
 write.csv(test$X,file = "x_input_2.csv")
+test
 
 getwd()
 temp00 <- l1.reg(t(test1$X), test1$Y, lambda = 0.1*200^2)
 temp00$nonzeros
-temp01 <- matrix(temp00$estimate)
+temp01 <- matrix(temp00$estimate) 
 ##rqPen Test
 library("rqPen")
 temp10 <- matrix(LASSO.fit(YY, XX, tau = 0.5, lambda = 0.1, intercept = FALSE, coef.cutoff = 1e-8))
@@ -250,7 +268,7 @@ test2 <- out_APML0$beta
 
 ##Real Data Test
 setwd("C:/Users/micha/Documents/AFT Model with L0 Regularization/AFT_APML0/AFT_APML0/project")
-y_input <- read.csv("y_input_1.csv", header = FALSE)
+y_input <- read.csv("y_input_2.csv", header = FALSE)
 x_input <- as.matrix(read.csv("x_input_1.csv", header = FALSE))
 status_input <- read.csv("status_input_1.csv", header = FALSE)
 
@@ -282,8 +300,66 @@ for (i in 1:10) {
   APML0_final1 <- rbind(APML0_final1, two_cv$APML0)
 }
 
-old_sample <- model0
-new_model$n1
-beta <- matrix(two_cv$LASSO[4:(p+3)])
-nrow(new_model$X)
-new_model$n1
+# ARCHIVE 2018/11/28 Test CDLasso and rqPen Package
+
+# ##Intercept for CDLasso??? How it works? ()
+# test_old <- list(as.matrix(y_input), as.matrix(status_input), x_input, n, p) 
+# names(test_old) <-  c('Y', 'status', "X", "n", "p")
+# test_new <- new_sample(test_old)
+# test <- l1.reg(t(test_new$X), test_new$Y, lambda = 0.01*n^2)
+# test$intercept
+# 
+# x_input_2 <- cbind(matrix(rep(1,n)), x_input)
+# test <- l1.reg(t(x_input), as.matrix(y_input), lambda = 0.1)
+# test <- l1.reg(t(x_input_2), as.matrix(y_input), lambda = 0.1)
+
+# ####rqPen (benchmark) 
+# setwd("C:/Users/micha/Documents/AFT Model with L0 Regularization/APML0 replication/AFT_APML0_R")
+# dataK <- read.csv("check.csv", header = FALSE)
+# y_input <- matrix(dataK[, 1])
+# n1 <- nrow(dataK)
+# dataK[n1, 2]
+# x_input <- as.matrix(dataK[1:n1, 2:401], dimnames = NULL)
+# x_input[1,400]
+# new_model <- list(y_input, x_input, 200, n1-1, 400)
+# names(new_model) <- c("Y", "X", "n", "n1", "p")
+# AFT_Likelihood_penalty(new_model, temp10, 0.1*n1)
+# 
+# temp10 <- matrix(LASSO.fit(y_input, x_input, tau = 0.5, lambda = 0.09, intercept = FALSE, coef.cutoff = 1e-3))
+# temp20 <- l1.reg(t(x_input), as.matrix(y_input), lambda = 0.1*n1)
+# temp20 <- matrix(temp20$estimate)
+# 
+# temp10 <- round(temp10, 5)
+# temp10 <- matrix(LASSO.fit(as.matrix(y_input), x_input, tau = 0.5, lambda = 0.015, intercept = FALSE, coef.cutoff = 1e-10))
+# temp10_F <- data.frame(x = temp10[2:22,], y = 0, group = seq(1,21,1))
+# for (i in 1:100) {
+#   temp10 <- matrix(LASSO.fit(as.matrix(y_input), x_input, tau = 0.5, lambda = 0.001*i, intercept = TRUE, coef.cutoff = 1e-10))
+#   temp10_F <- rbind(temp10_F, data.frame(x = temp10[2:22,], y = 0.001*i, group = seq(1,21,1)))
+#   cat("-------------", i, '\n')
+# }
+# ggplot(temp10_F, aes(x = y, y = x, group = group)) + geom_line()
+# 
+# old_model <- gen_AFT(n, p, 1)
+# new_model <- new_sample(old_model)
+# temp1 <- matrix(LASSO.fit(new_model$Y, new_model$X, tau = 0.5, lambda = 0.05, intercept = FALSE, coef.cutoff = 1e-10))
+# temp1[1,1]
+# temp2 <- l1.reg(t(new_model$X), new_model$Y, lambda = 0.1*new_model$n1)
+# temp2 <- matrix(temp2$estimate)
+# nzero(temp1)
+# View(round(cbind(temp1[2:301,1],temp2),3))
+# View(round(cbind(temp1,temp2),3))
+# nzero(temp2)
+# ####CDLasso
+# temp20 <- l1.reg(t(x_input), as.matrix(y_input), lambda = 0)
+# temp20_F <- data.frame(x = temp20$estimate, y = 0, group = seq(1,21,1))
+# for (i in 1:100) {
+#   temp20 <- l1.reg(t(x_input), as.matrix(y_input), lambda = 1*i)
+#   temp20_F <- rbind(temp20_F, data.frame(x = temp20$estimate, y = 0.01*i, group = seq(1,21,1)))
+#   cat("-------------", i, '\n')
+# }
+# ggplot(temp20_F, aes(x = y, y = x, group = group)) + geom_line()
+# 
+# temp11 <- matrix(test$estimate)
+# temp11 <- matrix(c(0,test$estimate))
+# temp12 <- cbind(temp10, temp11)
+# View(round(temp12,3))
