@@ -49,9 +49,9 @@ cross_validation <- function(Y=NULL, status=NULL, X=NULL, seed = 1, n = 200, p =
       old_model1 <- list(matrix(old_model$Y[out,]), matrix(old_model$status[out,]), old_model$X[out,], n-length(out), p)
       names(old_model1) <- c('Y', 'status', "X", "n", "p")
       new_model1 <- new_sample(old_model1)
-      ##temp <- l1.reg(t(new_model1$X), new_model1$Y, lambda = lambda[j]*new_model1$n^2)
-      ##temp1 <- matrix(temp$estimate)
-      temp1 <- matrix(LASSO.fit(new_model1$Y, new_model1$X, tau = 0.5, lambda = lambda[j], intercept = FALSE, coef.cutoff = 1e-10))
+      temp <- l1.reg(t(new_model1$X), new_model1$Y, lambda = lambda[j]*new_model1$n^2)
+      temp1 <- matrix(temp$estimate)
+      # temp1 <- matrix(LASSO.fit(new_model1$Y, new_model1$X, tau = 0.5, lambda = lambda[j], intercept = FALSE, coef.cutoff = 1e-10))
       rank <- Klasso(temp1)
       for (t in 1:maxit) {
         temp2 <- top_k(temp1, rank, t)
@@ -108,7 +108,7 @@ AFT_Likelihood_penalty <- function(new_model, beta, lambda) {
   s <- 0
   for (i in 1:n1) {
     if (y0[i, 1] < 0) {
-      s <- s - y0[i, 1]
+      s <- s - y0[i, 1] * 2
     }
   }
   for (i in 1:p) {
@@ -157,7 +157,7 @@ top_k <- function(beta, c_beta, k) {
 
 
 
-##Simulation Data (AFT) Initialized
+## Simulation Data (AFT) Initialized
 p <- 200
 n <- 200 ##n>15
 
@@ -166,7 +166,7 @@ gen_AFT <- function(n, p, seed) {
   beta <- (-1)^(seq(1,15,1))*2*exp(seq(0,-14,-1)/15)
   beta <- c(beta, rep(0, p-15))
   beta <- matrix(beta)
-  ##K <- diag(0.5,5,5) + matrix(0.5,5,5)
+  ## K <- diag(0.5,5,5) + matrix(0.5,5,5)
   K <- diag(5)
   K1 <- chol(K)
   
@@ -192,7 +192,7 @@ gen_AFT <- function(n, p, seed) {
   return(AFT_data)
 }
 
-##Simulation Data (AFT) Reformed (new_sample)
+## Simulation Data (AFT) Reformed (new_sample)
 new_sample <- function(old_sample) {
   T <- old_sample$Y
   theta <- old_sample$status
@@ -225,7 +225,7 @@ new_sample <- function(old_sample) {
   return(new_data)
 }
 
-##CDLasso Test
+## CDLasso Test
 library("CDLasso")
 test <- gen_AFT(200, 1000, 1)
 test1 <- new_sample(test)
@@ -238,11 +238,11 @@ getwd()
 temp00 <- l1.reg(t(test1$X), test1$Y, lambda = 0.1*200^2)
 temp00$nonzeros
 temp01 <- matrix(temp00$estimate) 
-##rqPen Test
+## rqPen Test
 library("rqPen")
 temp10 <- matrix(LASSO.fit(YY, XX, tau = 0.5, lambda = 0.1, intercept = FALSE, coef.cutoff = 1e-8))
 
-##Simulation Data (AFT)
+## Simulation Data (AFT)
 n <- 200
 p <- 300
 maxit <- 50
@@ -266,11 +266,13 @@ out_APML0$Non_zero
 test <- out_LASSO$beta
 test2 <- out_APML0$beta
 
-##Real Data Test
+## Real Data Test (Cross-Validation)
 setwd("C:/Users/micha/Documents/AFT Model with L0 Regularization/AFT_APML0/AFT_APML0/project")
 y_input <- read.csv("y_input_2.csv", header = FALSE)
 x_input <- as.matrix(read.csv("x_input_1.csv", header = FALSE))
 status_input <- read.csv("status_input_1.csv", header = FALSE)
+
+y_input <- log(y_input)
 
 n <- nrow(y_input)
 p <- ncol(x_input)
@@ -300,7 +302,137 @@ for (i in 1:10) {
   APML0_final1 <- rbind(APML0_final1, two_cv$APML0)
 }
 
-# ARCHIVE 2018/11/28 Test CDLasso and rqPen Package
+## Real Data Test (Parameter Selection)
+
+#### AFT LASSO
+sd_LASSO <- apply(LASSO_final1[, 4:(p+3)], 2, sd)
+for (i in 1:p) {
+  if (sd_LASSO[i] < 1e-8)
+    sd_LASSO[i] <- 100
+}
+sig_LASSO <- abs(apply(LASSO_final1[, 4:(p+3)], 2, mean))/sd_LASSO
+sig_LASSO <- sig_LASSO/(max(sig_LASSO) + 0.1)
+freq_LASSO <- matrix(0, nrow = 1, ncol = p)
+for (i in 1:p) {
+  for (j in 1:10) {
+    if (LASSO_final1[j, (i+3)] != 0)
+      freq_LASSO[1, i] <- freq_LASSO[1, i] + 1
+  }
+}
+k0 <- sum(freq_LASSO >= 6)
+freq_LASSO <- freq_LASSO + matrix(sig_LASSO, nrow = 1)
+select_LASSO <- order(freq_LASSO, decreasing = TRUE)
+
+n0 <- floor(n/2)
+c_index_test <- matrix(0, nrow = 1, ncol = 13)
+for (i in 1:10) {
+  key_ <- sample(key)
+  key0 <- key_[1:n0]
+  key1 <- key_[(n0+1):n]
+  y0 <- matrix(y_input[key0, 1])
+  y1 <- matrix(y_input[key1, 1])
+  status0 <- matrix(status_input[key0, 1])
+  status1 <- matrix(status_input[key1, 1])
+  for (j in 1:k0) {
+    if (j == 1) {
+      x0 <- matrix(x_input[key0, select_LASSO[1:j]])
+      x1 <- matrix(x_input[key1, select_LASSO[1:j]])
+    } else {
+      x0 <- x_input[key0, select_LASSO[1:j]]
+      x1 <- x_input[key1, select_LASSO[1:j]]
+    }
+    old_model1 <- list(y1, status1, x1, n - n0, j)
+    names(old_model1) <- c('Y', 'status', "X", "n", "p")
+    old_model0 <- list(y0, status0, x0, n0, j)
+    names(old_model0) <- c('Y', 'status', "X", "n", "p")
+    new_model0 <- new_sample(old_model0)
+    new_model1 <- new_sample(old_model1)
+    temp1 <- matrix(LASSO.fit(new_model1$Y, new_model1$X, tau = 0.5, lambda = 0, intercept = FALSE, coef.cutoff = 1e-10))
+    c_index_test[1, j] <- c_index_test[1, j] + c_index(new_model0, temp1)
+    cat("---------", i, "---------", j, '\n')
+  }
+}
+c_index_test <- c_index_test/10
+setwd("C:/Users/micha/Documents/AFT Model with L0 Regularization/APML0 replication/AFT_APML0_R")
+name <- read.csv("namelist.csv", header = FALSE)
+select_name <- as.matrix(name[1, select_LASSO][, 1:k0], nrow = 1)
+aft_c_index <- data.frame(c_index = c(c_index_test), parameters = seq(1, k0, 1), names = c(select_name))
+
+q <- ggplot(aft_c_index, aes(x = parameters, y = c_index)) + geom_line() + geom_point()
+q + geom_label_repel(aes(label = names),
+                   point.padding = 0.2,
+                   segment.color = 'grey50') +
+  scale_y_continuous(limits = c(NA, 0.85)) +
+  theme_classic(base_size = 12)
+
+#### COX LASSO
+
+cv.fit <- cv.glmnet(x_input, Surv(time = matrix(unlist(exp(y_input))), event = matrix(unlist(status_input))), family="cox")
+plot(cv.fit)
+cv.fit <- glmnet(x_input, Surv(time = matrix(unlist(exp(y_input))), event = matrix(unlist(status_input))), family="cox", lambda = cv.fit$lambda.min)
+matrix(cv.fit$beta)
+n0 <- floor(n/2)
+c_index_cox <- matrix(0, nrow = 1, ncol = 13)
+for (i in 1:10) {
+  key_ <- sample(key)
+  key0 <- key_[1:n0]
+  key1 <- key_[(n0+1):n]
+  y0 <- matrix(y_input[key0, 1])
+  y1 <- matrix(y_input[key1, 1])
+  status0 <- matrix(status_input[key0, 1])
+  status1 <- matrix(status_input[key1, 1])
+  for (j in 2:k0) {
+    if (j == 1) {
+      x0 <- matrix(x_input[key0, select_LASSO[1:j]])
+      x1 <- matrix(x_input[key1, select_LASSO[1:j]])
+    } else {
+      x0 <- x_input[key0, select_LASSO[1:j]]
+      x1 <- x_input[key1, select_LASSO[1:j]]
+    }
+    old_model0 <- list(y0, status0, x0, n0, j)
+    names(old_model0) <- c('Y', 'status', "X", "n", "p")
+    new_model0 <- new_sample(old_model0)
+    temp0 <- cv.glmnet(x1, Surv(time = matrix(unlist(exp(y1))), event = matrix(unlist(status1))), family="cox")
+    lambda0 <- temp0$lambda.min
+    temp0 <- glmnet(x1, Surv(time = matrix(unlist(exp(y1))), event = matrix(unlist(status1))), family="cox", lambda = lambda0)
+    temp1 <- matrix(temp0$beta)
+    c_index_cox[1, j] <- c_index_cox[1, j] + c_index(new_model0, -temp1)
+    cat("---------", i, "---------", j, '\n')
+  }
+}
+c_index_cox <- c_index_cox/10
+
+
+# COX using Gene_Expression Data (MCI -> DM) and Features
+gene_exp <- read.csv("ADNI_Gene_Expression_Profile_2.csv")
+gene_exp <- t(matrix(unlist(gene_exp), nrow = nrow(gene_exp)))
+gene_exp_name <- c(rownames(gene_exp))
+gene_exp_name <- substr(gene_exp_name, 2, 11)
+all_names <- read.csv("sample.csv", header = FALSE)
+all_names <- matrix(unlist(all_names))
+all_names[1,1] <- "023_S_0042"
+
+k_0 <- c()
+k_1 <- c()
+for (i in 1:nrow(all_names)) {
+  a <- which(gene_exp_name == all_names[i,1])
+  if (!identical(a,integer(0))) {
+    k_0 <- c(k_0, i)
+    k_1 <- c(k_1, a)
+  }
+}
+
+y_input2 <- matrix(y_input[k_0, ])
+status_input2 <- matrix(status_input[k_0, ])
+x_input_2 <- gene_exp[k_1, ]
+
+surv_gene <- Surv(time = exp(y_input2), event = status_input2, type = "right")
+cox_test <- cv.glmnet(x_input_2, surv_gene, family = "cox")
+cox_test$lambda.min
+cox_test$lambda.1se
+plot(cox_test)
+
+# ARCHIVE 2018/11/28 Test CDLasso and rqPen Package: *****SIMILAR PERFORMANCE*****
 
 # ##Intercept for CDLasso??? How it works? ()
 # test_old <- list(as.matrix(y_input), as.matrix(status_input), x_input, n, p) 
@@ -310,7 +442,7 @@ for (i in 1:10) {
 # test$intercept
 # 
 # x_input_2 <- cbind(matrix(rep(1,n)), x_input)
-# test <- l1.reg(t(x_input), as.matrix(y_input), lambda = 0.1)
+# test <- l1.reg(t(x_input), as.matrix(y_input), lambda = 0.1)  
 # test <- l1.reg(t(x_input_2), as.matrix(y_input), lambda = 0.1)
 
 # ####rqPen (benchmark) 
@@ -325,7 +457,7 @@ for (i in 1:10) {
 # names(new_model) <- c("Y", "X", "n", "n1", "p")
 # AFT_Likelihood_penalty(new_model, temp10, 0.1*n1)
 # 
-# temp10 <- matrix(LASSO.fit(y_input, x_input, tau = 0.5, lambda = 0.09, intercept = FALSE, coef.cutoff = 1e-3))
+# temp10 <- matrix(LASSO.fit(y_input, x_input, tau = 0.5, lambda = 0.055, intercept = FALSE, coef.cutoff = 1e-3))
 # temp20 <- l1.reg(t(x_input), as.matrix(y_input), lambda = 0.1*n1)
 # temp20 <- matrix(temp20$estimate)
 # 
@@ -363,3 +495,65 @@ for (i in 1:10) {
 # temp11 <- matrix(c(0,test$estimate))
 # temp12 <- cbind(temp10, temp11)
 # View(round(temp12,3))
+
+# ARCHIVE 2018/12/13 Clustering for Gene Expression (fork from PH525x series - Biomedical Data Science): *****NO SIGNIFICANCY*****
+
+# gene_filter <- matrix(NA, nrow = nrow(gene_exp), ncol = 0)
+# k1 <- which(d_gene == 0)
+# y1_gene <-  y_gene[k1, ]
+# i <- 1
+# for (i in 1:ncol(gene_exp)) {
+#   test_gene <- gene_exp[k1, i]
+#   test <- lm(y1_gene ~ test_gene)
+#   test.summary <- summary(test)
+#   if (test.summary$coefficients[2,4] < 0.5) {
+#     gene_filter <- cbind(gene_filter, matrix(gene_exp[, i]))
+#   }
+#   cat("-----", i, '\n')
+# }
+# 
+# surv_gene <- Surv(time = y_gene, event = d_gene, type = "right")
+# cox_test <- cv.glmnet(gene_filter[,1:200], surv_gene, family = "cox")
+# plot(cox_test)
+# log(cox_test$lambda.min)
+# gene_filter[1:10,1:20]
+
+# ARCHIVE 2018/12/13 AFT using Gene_Expression Data (CN -> MCI): *****CANNOT BE RUN*****
+# 
+# gene_exp <- t(matrix(unlist(Gene_Expression[1:nrow(Gene_Expression), 2:ncol(Gene_Expression)]), nrow = nrow(Gene_Expression)))
+# gene_exp_name <- c(colnames(Gene_Expression)[2:ncol(Gene_Expression)])
+# 
+# mean_gene <- matrix(apply(gene_exp, 2, mean), nrow = nrow(gene_exp), ncol = ncol(gene_exp), byrow = TRUE)
+# sd_gene <- matrix(apply(gene_exp, 2, sd), nrow = nrow(gene_exp), ncol = ncol(gene_exp), byrow = TRUE)
+# gene_exp <- (gene_exp - mean_gene)/sd_gene
+# y_gene <- matrix(unlist(y_gene))
+# d_gene <- matrix(unlist(d_gene))
+# 
+# n <- nrow(y_gene)
+# p <- ncol(gene_exp)
+# key <- seq(1, n, 1)
+# n0 <- floor(n/2)
+# index_LASSO_gene <- c()
+# index_APML0_gene <- c()
+# LASSO_final_gene <- matrix(NA, nrow = 0, ncol = p+3)
+# APML0_final_gene <- matrix(NA, nrow = 0, ncol = p+3)
+# for (i in 1:10) {
+#   key_ <- sample(key)
+#   key0 <- key_[1:n0]
+#   key1 <- key_[(n0+1):n]
+#   y0 <- matrix(y_gene[key0, 1])
+#   y1 <- matrix(y_gene[key1, 1])
+#   status0 <- matrix(d_gene[key0, 1])
+#   status1 <- matrix(d_gene[key1, 1])
+#   x0 <- gene_exp[key0, ]
+#   x1 <- gene_exp[key1, ]
+#   two_cv <- cross_validation(Y = y1, status = status1, X = x1)
+#   model0 <- list(y0, status0, x0, n0, p)
+#   names(model0) <- c('Y', 'status', "X", "n", "p")
+#   model00 <- new_sample(model0)
+#   index_LASSO_gene <- c(index_LASSO_gene, c_index(model0, matrix(two_cv$LASSO[4:(p+3)])))
+#   index_APML0_gene <- c(index_APML0_gene, c_index(model0, matrix(two_cv$APML0[4:(p+3)])))
+#   LASSO_final_gene <- rbind(LASSO_final_gene, two_cv$LASSO)
+#   APML0_final_gene <- rbind(APML0_final_gene, two_cv$APML0)
+# }
+
